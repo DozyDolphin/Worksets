@@ -7,6 +7,7 @@ Built for Unity 7 (R.I.P) and has been tested on Ubuntu 16.04.
 |:---:|:---:|
 | Tray menu | | Application dialog |
 
+
 ### Features
 
 * Create worksets for running and placing apps in predefined positions on the monitor and desktop of your choice
