@@ -3,8 +3,8 @@
 Worksets helps you to quickly launch and arrange multiple applications in your desktop environment to support a specific workflow.
 Built for Unity 7 (R.I.P) and has been tested on Ubuntu 16.04.
 
-| <img src="/doc/images/tray_menu.png?raw=true" width="160"> | <img src="/doc/images/app_dialog.png?raw=true" width="260"> |
-|:---:|:---:|
+| <img src="/doc/images/tray_menu.png?raw=true" width="120"> | <img src="/doc/images/workset_dialog.png?raw=true" width="160"> | <img src="/doc/images/app_dialog.png?raw=true" width="160"> |
+|:---:|:---:|:--:|
 | Tray menu | Application dialog |
 
 
