@@ -1,0 +1,10 @@
+prune doc
+prune scripts
+prune tests
+recursive-include worksets *.py *.mo *.svg
+include CHANGES.txt
+include LICENSE
+include MANIFEST.in
+include README.md
+include README.rst
+include setup.py

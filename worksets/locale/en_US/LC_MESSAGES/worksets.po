@@ -1,0 +1,270 @@
+# Worksets.
+# Copyright (C) 2017 Anders Lykke Gade
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2017-07-09 20:20+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: English\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: appdialog.py:141
+msgid "App"
+msgstr "Application"
+
+#: appdialog.py:142 worksetdialog.py:177
+msgid "Name:"
+msgstr "Name:"
+
+#: appdialog.py:143
+msgid "Executable:"
+msgstr "Executable:"
+
+#: appdialog.py:144
+msgid "Parameters:"
+msgstr "Parameters:"
+
+#: appdialog.py:145
+msgid "Location on desktop:"
+msgstr "Location on desktop:"
+
+#: appdialog.py:146
+msgid "Desktop:"
+msgstr "Desktop:"
+
+#: appdialog.py:147
+msgid "Monitor:"
+msgstr "Monitor:"
+
+#: appdialog.py:148
+msgid "Placement"
+msgstr "Placement"
+
+#: appdialog.py:149 worksetdialog.py:182
+msgid "Test"
+msgstr "Test"
+
+#: appdialog.py:150
+msgid "Creates a new window"
+msgstr "Creates a new window"
+
+#: appdialog.py:151
+msgid "Has splash screen"
+msgstr "Has splash screen"
+
+#: appdialog.py:152
+msgid "Uses existing window if one is present"
+msgstr "Uses existing window if one is present"
+
+#: appdialog.py:153 manageworksets.py:123 settingsdialog.py:115
+#: worksetdialog.py:184
+msgid "&Cancel"
+msgstr "&Cancel"
+
+#: appdialog.py:154 manageworksets.py:124 settingsdialog.py:116
+#: worksetdialog.py:185
+msgid "&Ok"
+msgstr "&Ok"
+
+#: manageworksets.py:72
+msgid "Delete the following worksets?"
+msgstr "Delete the following worksets?"
+
+#: manageworksets.py:74 worksetdialog.py:132
+msgid "Confirm deletion"
+msgstr "Confirm deletion"
+
+#: manageworksets.py:120 trayindicator.py:90
+msgid "Manage worksets"
+msgstr "Manage worksets"
+
+#: manageworksets.py:121
+msgid "New workset"
+msgstr "New workset"
+
+#: manageworksets.py:122 worksetdialog.py:180
+msgid "Delete"
+msgstr "Delete"
+
+#: settingsdialog.py:78
+msgid "Select Folder"
+msgstr "Select Folder"
+
+#: settingsdialog.py:98 trayindicator.py:93
+msgid "Settings"
+msgstr "Settings"
+
+#: settingsdialog.py:99
+msgid "Language:"
+msgstr "Language:"
+
+#: settingsdialog.py:100
+msgid "Script directory:"
+msgstr "Script directory:"
+
+#: settingsdialog.py:102
+msgid "Logging enabled"
+msgstr "Logging enabled"
+
+#: settingsdialog.py:103
+msgid "Scan for system changes"
+msgstr "Scan for system changes"
+
+#: settingsdialog.py:104
+msgid "Log directory:"
+msgstr "Log directory:"
+
+#: settingsdialog.py:105
+msgid "Log level:"
+msgstr "Log level:"
+
+#: settingsdialog.py:107
+msgid "Log to console"
+msgstr "Log to console"
+
+#: settingsdialog.py:108
+msgid "General"
+msgstr "General"
+
+#: settingsdialog.py:111
+msgid ""
+"Quickly launch and arrange multiple applications <br/>in your desktop "
+"environment to support a specific workflow."
+msgstr ""
+"Quickly launch and arrange multiple applications <br/>in your desktop "
+"environment to support a specific workflow."
+
+#: settingsdialog.py:113
+msgid "This program is distributed"
+msgstr "This program is distributed"
+
+#: settingsdialog.py:113
+msgid "without any warranty whatsoever"
+msgstr "without any warranty whatsoever"
+
+#: settingsdialog.py:113
+msgid "under the"
+msgstr "under the"
+
+#: settingsdialog.py:113
+msgid "GNU General Public Licence, version 3 or later"
+msgstr "GNU General Public Licence, version 3 or later"
+
+#: settingsdialog.py:114
+msgid "About"
+msgstr "About"
+
+#: trayindicator.py:42
+msgid "System tray not available."
+msgstr "System tray not available."
+
+#: trayindicator.py:43
+msgid ""
+"Worksets relies on the system tray - the application will terminate.\n"
+"\n"
+"Please enable the system tray and try again."
+msgstr ""
+"Worksets relies on the system tray - the application will terminate.\n"
+"\n"
+"Please enable the system tray and try again."
+
+#: trayindicator.py:96
+msgid "Quit"
+msgstr "Quit"
+
+#: worksetdialog.py:130
+msgid "Delete the following apps?"
+msgstr "Delete the following apps?"
+
+#: worksetdialog.py:176
+msgid "Workset"
+msgstr "Workset"
+
+#: worksetdialog.py:178
+msgid "Init script:"
+msgstr "Init script:"
+
+#: worksetdialog.py:179
+msgid "Apps:"
+msgstr "Applications:"
+
+#: worksetdialog.py:181
+msgid "Add app"
+msgstr "Add application"
+
+#: controller.py:85 controller.py:117
+msgid "Name cannot be empty."
+msgstr "Name cannot be empty."
+
+#: controller.py:91
+msgid "Name must be unique"
+msgstr "Name must be unique"
+
+#: controller.py:96
+msgid "Program doesn't seem to exist"
+msgstr "Program doesn't seem to exist"
+
+#: controller.py:120
+msgid "Name has to be unique"
+msgstr "Name has to be unique"
+
+#: placement_factory.py:31
+msgid "Maximized"
+msgstr "Maximized"
+
+#: placement_factory.py:32
+msgid "Top"
+msgstr "Top"
+
+#: placement_factory.py:33
+msgid "Bottom"
+msgstr "Bottom"
+
+#: placement_factory.py:34
+msgid "Upper left"
+msgstr "Upper left"
+
+#: placement_factory.py:35
+msgid "Left"
+msgstr "Left"
+
+#: placement_factory.py:36
+msgid "Lower left"
+msgstr "Lower left"
+
+#: placement_factory.py:37
+msgid "One third left"
+msgstr "One third left"
+
+#: placement_factory.py:38
+msgid "Two thirds left"
+msgstr "Two thirds left"
+
+#: placement_factory.py:39
+msgid "Upper right"
+msgstr "Upper right"
+
+#: placement_factory.py:40
+msgid "Right"
+msgstr "Right"
+
+#: placement_factory.py:41
+msgid "Lower right"
+msgstr "Lower right"
+
+#: placement_factory.py:42
+msgid "One third right"
+msgstr "One third right"
+
+#: placement_factory.py:43
+msgid "Two thirds right"
+msgstr "Two thirds right"

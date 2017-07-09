@@ -1,0 +1,1172 @@
+#!/bin/bash
+#
+#  uwc (Unity Window Controller) is a script to ease manipulation
+#  of windows in the Unity 7 environment. 
+#
+#  Copyright (C) 2016 Anders Lykke Gade
+#
+#  This script is free software: you can redistribute it and/or modify it under the
+#  terms of the GNU General Public License as published by the Free Software Foundation,
+#  either version 3 of the License, or (at your option) any later version.
+#
+#  This script is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+#  without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#  See the GNU General Public License for more details. 
+#
+#  You should have received a copy of the GNU General Public License along with this program.
+#  If not, see http://www.gnu.org/licenses/.
+
+################################################################
+########################### VARIABLES ##########################
+
+declare -r VERTICAL_WORKSPACES=$(dconf read /org/compiz/profiles/unity/plugins/core/vsize)
+declare -r HORISONTAL_WORKSPACES=$(dconf read /org/compiz/profiles/unity/plugins/core/hsize)
+declare -r TOTAL_NO_OF_WORKSPACES=$(( VERTICAL_WORKSPACES*HORISONTAL_WORKSPACES ))
+
+declare errorTicker=0            # error Ticker - counts how many errors found | DEV
+declare verbose=0                # Verbose mode - Enable verbose mode
+declare scriptingMode=0          # Scripting mode - Enable Scripting mode
+declare exactMatch=0            # windows identifier is specific and case sensitive - option for wmctrl     
+declare nthWindow=0  
+declare usingXDO=0
+declare appInitiated=0
+declare app=""
+
+declare placement                
+declare workspace                # which workspace 
+declare display                  # which display
+
+declare displays                 # all connected displays
+declare activeDisplays           # all active displays
+declare -A displayList           
+
+declare -A xDims
+declare -A xOffsets
+declare -A workspaceXOffsets
+
+declare -A yDims
+declare -A yOffsets
+declare -A workspaceYOffsets
+
+declare -ga isPrimary
+declare -a isActive
+
+#declare window                   # the window to be manipulated - SHOULD NO LONGER BE NEEDED!?
+declare windowId
+declare windowPid
+declare windowXOffset
+declare windowYOffset
+declare windowWidth
+declare windowHeight
+declare windowTitle
+declare windowOnDisplay          # which display is the window currently on
+declare windowOnWorkspace
+
+declare -a xOffsetsForSort
+declare -a yOffsetsForSort
+declare desktopGeometry
+declare workArea
+
+declare -i screenNr=1 # Needs refactoring but should be localized
+
+################################################################
+########################### FUNCTIONS ##########################
+
+function main () {	
+  
+  checkDependencies
+
+  setup
+
+  local OPTIND
+
+  while getopts ":Fvhdlt:i:m:r:n:cIp:" opt; do
+    case $opt in
+      F)
+        exactMatch=1
+        ;;
+      v)
+        verbose=1
+        ;;
+      h)
+        showHelp
+        exit 0
+        ;;
+      d)                          # display information
+        listDisplayInfo
+        exit 0
+        ;;        
+      l)
+        listWindows
+        exit 0
+        ;;
+      t)
+        devTest "$OPTARG"
+        ;;
+      i)                          # initiate application
+        appInitiated=1
+        initiateApp "$OPTARG"
+        app=${OPTARG% *}
+        ;;
+      m)                          # Move view to
+        moveToWorkspace "$OPTARG"
+        ;;
+      r)                          # specify window to manipulate
+        findWindow "$OPTARG"
+        ;;
+      n)
+        nthWindow=$(( $OPTARG-1 ))
+        ;;
+      c)                          # close specific or all windows
+        if [[ -n "${windowId+1}" ]]; then
+          closeWindow "$windowId"
+        else
+          closeAll
+        fi
+        ;;
+      I)
+        if [[ -n "${windowId+1}" ]]; then
+          listWindowInfo
+          exit 0
+        else
+          error "A window needs to be specified."
+          exit 1
+        fi
+        ;;
+      p)
+        setDisplayWorkspaceAndPlacement "$OPTARG"
+        ;;
+      :)
+        error "-$OPTARG requires an argument."
+        ;;
+     \?)
+        error "Invalid option: -$OPTARG"
+        ;;
+    esac
+  done
+
+  if [ $OPTIND -eq 1 ]; then
+    printf "%s\n" "uwc (Unity Window Controller) v1.01"
+    printf "%s\n" "Copyright (C) 2016 Anders Lykke Gade"
+    printf "%s\n" ""
+    printf "%s\n" "This script is distributed under the GNU General"
+    printf "%s\n" "Public License and comes with ABSOLUTELY NO WARRANTY."
+    printf "%s\n" ""
+    printf "%s\n" "See help (uwc -h) for usage instructions."
+    exit 0
+  fi
+
+  if [[ $errorTicker > 0 ]]; then
+    exit 1
+  fi
+
+  if [ "$appInitiated" -eq "1" ]; then
+      testWindow
+  fi
+
+  echo " reaching transferring Window"
+  if [[ -n $windowId ]] && [[ -n $workspace ]]; then
+    transferWindow
+  fi
+
+}
+
+function devTest () {             # FOR DEVELOPMENT PURPOSES
+  printf "%s\n" "running test..."
+  inputVar="$1"
+  echo "we are looking for the app: $inputVar"
+  echo ""
+
+  wmctrlListOutput=$(wmctrl -plG)
+  xwininfoOutput=$(xwininfo -tree -root | grep "$inputVar")
+
+  firstLineFromOutput=$( printf "%s\n" "$xwininfoOutput" | head -n 1 )
+  tmp=${firstLineFromOutput#*\" \"}
+  app=${tmp%\") *}
+  echo "found appName is: $app"
+
+  xwininfoOutput=$(xwininfo -tree -root | grep "$app")
+  local -A windowsFound
+  local -a lineNumbers
+  local lineNumber=0
+
+  while read -r xwinLine; do
+    local xwinId=${xwinLine:2:7}
+    echo "xwinId is now: $xwinId"
+
+    while read -r wmctrlListLine; do
+      local wmctrlListId=${wmctrlListLine:3:7} #wmctrl puts an extra 0 after the x. Why?
+      lineNumber=$((lineNumber+1))
+      if [ "$xwinId" = "$wmctrlListId" ]; then
+        echo "we have a match on line $lineNumber: $wmctrlListId and $xwinId"
+        lineNumbers+=( "$lineNumber" )
+        windowsFound[$lineNumber]="$wmctrlListLine"
+      fi
+    done <<< "$wmctrlListOutput"  
+    lineNumber=0
+  done <<< "$xwininfoOutput"
+
+  IFS=$'\n' newestWindowFirst=($(sort -r <<<"${lineNumbers[*]}"))
+  unset IFS
+
+  chosenWindow=${windowsFound[${newestWindowFirst[0]}]}
+  printf "%s\n" "WindowsFound is now: ${windowsFound[@]}"
+  printf "%s\n" "newestWindowsFirst is now: $newestWindowFirst"
+  printf "%s\n" "lineNumbers are: $lineNumbers"
+  printf "%s\n" "chosenWindow is: $chosenWindow"
+}
+
+##################### CORE FUNCTIONALITY #######################
+
+function moveToWorkspace () { #Moves view to specified workspace
+  local workspace=$1
+  if [[ ${workspaceXOffsets[$workspace]+true} == "true" ]]; then
+    wmctrl -o ${workspaceXOffsets[$workspace]},${workspaceYOffsets[$workspace]}
+  else
+    error "workspace $workspace doesn't exist!"
+  fi
+}
+
+function closeWindow () {  #close a defined window
+  wmctrl -i -c $windowId
+}
+
+function closeAll () {      #closes all user created windows
+  windowList=$(eval wmctrl -l)
+ 
+  catOutput=$(cat $HOME/.config/user-dirs.dirs | grep "XDG_DESKTOP_DIR")
+  i10nDesktop=${catOutput:23:-1}
+ 
+  while read -r line; do
+    IFS=$' ' read windowId desktopId client title <<< "$line"
+    unset IFS
+    if [[ "$title" != "unity-launcher" ]] && [[ "$title" != "unity-panel" ]] && [[ "$title" != "unity-dash" ]] && [[ "$title" != "Hud" ]] && [[ "$title" != "XdndCollectionWindowImp" ]] && [[ "$title" != $i10nDesktop ]]; then
+ 	   wmctrl -i -c $windowId
+    fi
+  done <<< "$windowList"
+}
+
+function listDisplayInfo () {
+  printf "%s\n" "======= Available workspaces and monitors ======="
+  printf "%s\n" ""
+  printf "%s\n" "Total workspaces:       $TOTAL_NO_OF_WORKSPACES"
+  printf "%s\n" "Vertical: $VERTICAL_WORKSPACES Horisontal: $HORISONTAL_WORKSPACES"
+  printf "%s\n" ""
+  printf "%s\n" "Total desktop size:           ${desktopGeometry}"
+  printf "%s\n" "Total screen size:            $workArea"
+  printf "%s\n" "Number of connected displays: $displays"
+  printf "%s\n" "Number of active displays: $activeDisplays"
+
+  local i=0
+  for k in ${isActive[@]}; do
+    (( n=$i+1 ))
+    printf "%s\n" "Display:     ${isActive[$i]}"
+    printf "%s\n" "Dimensions:  ${xDims[${isActive[$i]}]}x${yDims[${isActive[$i]}]}"
+    printf "%s\n" "Placement:   ${xOffsets[${isActive[$i]}]}${yOffsets[${isActive[$i]}]}"
+    (( i=$i+1 ))
+  done
+}
+
+function listWindowInfo () {
+
+  if [[ $machineOptimized == 1 ]]; then
+    $windowId $windowPid $windowXOffset $windowYOffset ${windowWidth}x$windowHeight ${windowOnWorkspace}.$windowOnDisplay
+  fi
+  printf "%s\n" "====================== Window Information ======================"
+  printf "%s\n" "Title: $windowTitle"
+  printf "%s\n" ""  
+  printf "%s\n" "WID: $windowId "
+  printf "%s\n" "PID: $windowPid" 
+  printf "%s\n" "Placement (workspace.display): ${windowOnWorkspace}.$windowOnDisplay" 
+  printf "%s\n" "Offsets: ${windowXOffset}x$windowYOffset"          
+  printf "%s\n" "Dimensions: ${windowWidth}x$windowHeight" 
+  printf "%s\n" "================================================================"
+}
+
+function initiateApp () {
+  local app="$1"
+  local appPid
+  local -i timeToWait=10
+  local -i timeElapsed=0
+  verbose "Initiating application: $app"
+  $app & appPid=$!
+  echo "appPid is = $appPid"
+  
+
+  while [ $timeElapsed -le $timeToWait ]; do
+
+    local windowExists=$(wmctrl -plG | \grep "$appPid")
+    echo "looking for window - windowExists is: $windowExists"
+    if ! [[ "$windowExists" == "" ]]; then
+      echo "We succesfully catched the window. "
+      listWindowInfo
+      break;
+    fi
+    sleep 0.8
+    timeElapsed=$((timeElapsed+1))
+  done
+
+  setWindow "$windowExists"
+  sleep 2               # necessary as of now to not try and transfer window too soon..
+}
+
+function findWindow () {
+
+  local -a windowsOldestFirst
+  local -a windowsNewestFirst
+
+  local arrayNumber
+
+  if [[ $exactMatch == 1 ]]; then
+    verbose "Searches for window case sensitive."
+    matches=$(wmctrl -plG | \grep "$1")
+  else
+    verbose "Searches for window ignoring case."
+    matches=$(wmctrl -plG | \grep -i "$1")
+  fi
+ 
+  while read -r line; do 
+    if ! [[ "$line" == "" ]]; then
+      windowsOldestFirst+=( "$line" )
+    fi
+  done <<< "$matches"
+
+  if [ "${#windowsOldestFirst[@]}" -gt "1" ]; then
+    entries=$(( ${#windowsOldestFirst[@]} - 1 ))
+    for (( i=$entries; i >= 0; i--)); do
+      windowsNewestFirst+=( "${windowsOldestFirst[$i]}" )
+    done
+  elif [ "${#windowsOldestFirst[@]}" -eq "1" ]; then
+    windowsNewestFirst+=( "${windowsOldestFirst[0]}" )
+  fi  
+
+  verbose "Found the following matching windows: ${windowsNewestFirst[@]}"
+
+  if [ ${#windowsNewestFirst[@]} -eq 0 ]; then
+    error "The window doesn't seem to exist"
+    return 1
+  fi
+
+  if [ "$nthWindow" -gt ${#windowsNewestFirst[@]} ]; then
+    nthWindow=$(( ${#windowsNewestFirst[@]}-1 ))
+  fi
+
+  setWindow "${windowsNewestFirst[$nthWindow]}"
+}
+
+function setWindow () {
+    local chosenWindow=$1
+    verbose "The chosen window is: $chosenWindow"
+    IFS=$' ' read id desktopNumber pid xOffset yOffset width height clientMachine title <<< "$chosenWindow"
+    unset IFS
+    windowId=$id
+    windowPid=$pid
+    windowXOffset=$xOffset
+    windowYOffset=$yOffset
+    windowWidth=$width
+    windowHeight=$height
+    windowTitle=$title
+    setWorkspaceOfWindow
+    setDisplayOfWindow
+    return 0
+}
+
+function testWindow () {
+  echo "we are looking for the app: $app"
+  echo ""
+
+  wmctrlListOutput=$(wmctrl -plG)
+  xwininfoOutput=$(xwininfo -tree -root | grep "$app")
+
+  firstLineFromOutput=$( printf "%s\n" "$xwininfoOutput" | head -n 1 )
+  tmp=${firstLineFromOutput#*\" \"}
+  app=${tmp%\") *}
+  echo "found appName is: $app"
+
+  xwininfoOutput=$(xwininfo -tree -root | grep "$app")
+  local -A windowsFound
+  local -a lineNumbers
+  local lineNumber=0
+
+  while read -r xwinLine; do
+    local xwinId=${xwinLine:2:7}
+    echo "xwinId is now: $xwinId"
+
+    while read -r wmctrlListLine; do
+      local wmctrlListId=${wmctrlListLine:3:7} #wmctrl puts an extra 0 after the x. Why?
+      lineNumber=$((lineNumber+1))
+      if [ "$xwinId" = "$wmctrlListId" ]; then
+        echo "we have a match on line $lineNumber: $wmctrlListId and $xwinId"
+        lineNumbers+=( "$lineNumber" )
+        windowsFound[$lineNumber]="$wmctrlListLine"
+      fi
+    done <<< "$wmctrlListOutput"  
+    lineNumber=0
+  done <<< "$xwininfoOutput"
+
+  newestWindowFirst=( $(printf "%s\n" ${lineNumbers[*]} | sort -nr) )
+  printf "%s\n" "sorted is ${sorted[@]}"
+  chosenWindow=${windowsFound[${newestWindowFirst[0]}]}
+  printf "%s\n" "WindowsFound is now: ${windowsFound[@]}"
+  printf "%s\n" "newestWindowsFirst is now: ${newestWindowFirst[@]}"
+  printf "%s\n" "lineNumbers are: $lineNumbers"
+  printf "%s\n" "chosenWindow is: $chosenWindow"
+  setWindow "$chosenWindow"
+
+}
+
+function transferWindow () {
+
+  local -i gravity=0 
+  local properties=
+  local -i propertiesIsSet=0
+  local xdoKey
+  
+  local windowWasMaxVert=0
+  local windowWasMaxHorz=0
+
+  verbose "WindowOnDisplay y-offset er: ${yOffsets[${displayList[$windowOnDisplay]}]}"
+  verbose "WindowOnDisplay x-offset er: ${xOffsets[${displayList[$windowOnDisplay]}]}"
+  verbose "WindowOnWorkspace y-offset er: ${workspaceYOffsets[$windowOnWorkspace]}"
+  verbose "WindowOnWorkspace x-offset er: ${workspaceXOffsets[$windowOnWorkspace]}"
+  verbose "display y-offset er: ${yOffsets[$display]}"
+  verbose "display x-offset er: ${xOffsets[$display]}"
+
+  case "$placement" in
+    "") # BUGGY AS AF (Due to Unity viewports) - If no placement is chosen, tries to move the window to another workspace/monitor with same location
+        local -i workspaceYOffset=${workspaceYOffsets[$workspace]}
+        local -i workspaceXOffset=${workspaceXOffsets[$workspace]}
+
+
+        local -i yOffsetToAdd=$(( $windowYOffset - ( ${workspaceYOffsets[$windowOnWorkspace]} + ${yOffsets[${displayList[$windowOnDisplay]}]} ) ))
+        local -i xOffsetToAdd=$(( $windowXOffset - ( ${workspaceXOffsets[$windowOnWorkspace]} + ${xOffsets[${displayList[$windowOnDisplay]}]} ) ))
+
+        windowXOffset=$(( $workspaceOffset + $xOffsetToAdd - 1 ))
+        windowYOffset=$(( $workspaceOffset + $yOffsetToAdd - 28 ))
+ 
+        printf "%s\n" "Window x-offset er efter ændring: $windowXOffset"
+        printf "%s\n" "Window y-offset er efter ændring: $windowYOffset"        
+        
+        if [[ "$display" == "" ]]; then
+          windowYOffset=$(( $windowYOffset + ${yOffsets[${displayList[$windowOnDisplay]}]} ))
+    	    windowXOffset=$(( $windowXOffset + ${xOffsets[${displayList[$windowOnDisplay]}]} ))        
+       
+          if (( ( $windowYOffset + $windowHeight ) >= ${yDims[${displayList[$windowOnDisplay]}]} )); then
+            tooHigh=$(( ( $yOffsetToAdd + $windowHeight ) - ${yDims[${displayList[$windowOnDisplay]}]} ))
+            windowHeight=$(( $windowHeight - ( $tooHigh + 10 ) ))
+          fi
+           
+          if (( ( $xOffsetToAdd + $windowWidth ) >= ${xDims[${displayList[$windowOnDisplay]}]} )); then
+            printf "%s\n" "Window wider than display and display IS NOT SET!"
+            printf "%s\n" "Display xdim er: ${xDims[${displayList[$windowOnDisplay]}]}"
+            printf "%s\n" "Window xoffset er: $xOffsetToAdd"
+            printf "%s\n" "Window width er: $windowWidth"
+            printf "%s\n" "Window width + offset er: $(( $xOffsetToAdd + $windowWidth ))"
+            tooWide=$(( ( $xOffsetToAdd + $windowWidth ) - ${xDims[${displayList[$windowOnDisplay]}]} ))
+            windowWidth=$(( $windowWidth - ( $tooWide + 10 ) ))
+          fi       
+
+        else
+    	    windowYOffset=$(( $windowYOffset + ${yOffsets[$display]} ))
+    	    windowXOffset=$(( $windowXOffset + ${xOffsets[$display]} ))
+
+          if (( ( $windowYOffset + $windowHeight ) >= ${yDims[$display]} )); then
+            tooHigh=$(( ( $yOffsetToAdd + $windowHeight ) - ${yDims[$display]} ))
+            windowHeight=$(( $windowHeight - ( $tooHigh + 10 ) ))
+          fi
+        
+          if (( ( $windowXOffset + $windowWidth ) >= ${xDims[$display]} )); then
+            printf "%s\n" "Window wider than display and display IS SET!"
+            printf "%s\n" "Display xdim er: ${xDims[$display]}"
+            printf "%s\n" "Window xoffset er: $xOffsetToAdd"
+            printf "%s\n" "Window width er: $windowWidth"
+            printf "%s\n" "Window width + offset er: $(( $xOffsetToAdd + $windowWidth ))"
+            tooWide=$(( ( $xOffsetToAdd + $windowWidth ) - ${xDims[$display]} ))
+            windowWidth=$(( $windowWidth - ( $tooWide + 10 ) ))
+          fi  
+        fi
+        printf "%s\n" "Window x-offset er efter ændring: $windowXOffset"
+        printf "%s\n" "og x offset burde endeligt være: $(( $workspaceXOffset + $windowXOffset ))"
+        printf "%s\n" "Window y-offset er efter ændring: $windowYOffset"
+        ;;
+    M)
+        usingXDO=1
+        xdoKey=KP_Begin
+        windowXOffset=$(( ${xOffsets[$display]} ))
+        windowYOffset=$(( ${yOffsets[$display]} + 24 ))
+        windowWidth=$(( ${xDims[$display]} - 2 ))
+        windowHeight=$(( ${yDims[$display]} - 52 ))
+        ;;
+    T)
+        usingXDO=1
+  		  xdoKey=KP_Up
+        windowXOffset=$(( ${xOffsets[$display]} + ( ${xDims[$display]} / 2 ) ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( ${xDims[$display]} - 2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 52 ))
+        properties="-b add,maximized_hort"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"   
+        ;; 
+    B)  
+        usingXDO=1
+  	    xdoKey=KP_Down
+        windowXOffset=$(( ${xOffsets[$display]} ))
+        windowYOffset=$(( (${yOffsets[$display]} + ( ${yDims[$display]} / 2 ))+24 ))
+        windowWidth=$(( ${xDims[$display]} - 2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 41 ))
+        properties="-b add,maximized_hort"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"  
+        ;;
+    UL) 
+        usingXDO=1
+  		  xdoKey=KP_Home
+        windowXOffset=$(( ${xOffsets[$display]} ))
+        windowYOffset=$(( ${yOffsets[$display]} + 24 ))
+        windowWidth=$(( (${xDims[$display]} / 2)-2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 52 ))  
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"
+        ;;
+    L) 
+        usingXDO=1
+        xdoKey=KP_Left      
+        windowXOffset=$(( ${xOffsets[$display]}+2 ))
+        windowYOffset=$(( ${yOffsets[$display]} ))
+        windowWidth=$(( (${xDims[$display]} / 2) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 ))	
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"   
+        ;;
+    LL)
+        usingXDO=1
+        xdoKey=KP_End      
+        windowXOffset=$(( ${xOffsets[$display]} ))
+        windowYOffset=$(( (${yOffsets[$display]} + ( ${yDims[$display]} / 2 ))+24 ))
+        windowWidth=$(( (${xDims[$display]} / 2) - 2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 41 ))
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"  
+        ;;
+    UR) 
+        usingXDO=1
+        xdoKey=KP_Prior      
+        windowXOffset=$(( ${xOffsets[$display]} + ( ${xDims[$display]} / 2 ) ))
+        windowYOffset=$(( ${yOffsets[$display]} + 52 ))
+        windowWidth=$(( (${xDims[$display]} / 2)-2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 52 ))
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight" 
+        ;;
+    R)
+        usingXDO=1
+        xdoKey=KP_Right      
+        windowXOffset=$(( (${xOffsets[$display]}+( ${xDims[$display]} / 2 ))+2 ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( (${xDims[$display]} / 2) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 ))
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"     
+        ;;
+    LR) 
+        usingXDO=1
+        xdoKey=KP_Next      
+        windowXOffset=$(( (${xOffsets[$display]}+( ${xDims[$display]} / 2 ))+2  ))
+        windowYOffset=$(( (${yOffsets[$display]} + ( ${yDims[$display]} / 2 ))+24 ))
+        windowWidth=$(( (${xDims[$display]} / 2) - 2 ))
+        windowHeight=$(( (${yDims[$display]} / 2) - 41 ))
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"
+        ;;
+    OTL)     
+        windowXOffset=$(( ${xOffsets[$display]}+2 ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( (${xDims[$display]} / 3) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 )) 
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"        
+        ;;
+    TTL)     
+        windowXOffset=$(( ${xOffsets[$display]}+2 ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( ((${xDims[$display]} / 3)*2) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 )) 
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"  
+        ;;
+    OTR)     
+        windowXOffset=$(( (${xOffsets[$display]}+(( ${xDims[$display]} / 3) * 2  ))+2 ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( (${xDims[$display]} / 3) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 ))
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"        
+        ;;
+    TTR)      
+        windowXOffset=$(( (${xOffsets[$display]}+( ${xDims[$display]} / 3 ))+2 ))
+        windowYOffset=${yOffsets[$display]}
+        windowWidth=$(( ((${xDims[$display]} / 3)*2) - 4 ))
+        windowHeight=$(( ${yDims[$display]} - 29 ))
+        properties="-b add,maximized_vert"
+        verbose "xOffset is: $windowXOffset yOffset is: $windowYOffset windowWidth is: $windowWidth windowHeight is: $windowHeight"   
+        ;;
+
+  esac
+
+  # Tests whether window is maximized vertically
+  if xprop -id "$windowId" | grep -q "_NET_WM_STATE_MAXIMIZED_VERT"; then
+    windowWasMaxVert=1
+    wmctrl -i -r $windowId -b remove,maximized_vert
+    windowHeight=$(( $windowHeight - 10 ))	    
+  fi
+
+  # Tests whether window is maximized horisontally
+  if xprop -id "$windowId" | grep -q "_NET_WM_STATE_MAXIMIZED_HORZ"; then
+    windowWasMaxHorz=1
+    wmctrl -i -r $windowId -b remove,maximized_horz
+    windowWidth=$(( $windowWidth - 10 ))
+  fi
+
+  wmctrl -o ${workspaceXOffsets[$workspace]},${workspaceYOffsets[$workspace]}
+
+  wmctrl -i -r $windowId -e ${gravity},${windowXOffset},${windowYOffset},${windowWidth},${windowHeight}
+
+  # If window was maximized vertically restore
+  if [[ $windowWasMaxVert = 1 ]] && ! [[ -n "$placement" ]] ; then
+
+    wmctrl -i -r $windowId -b add,maximized_vert
+  fi
+
+  # If window was maximized horisontally restore
+  if [[ $windowWasMaxHorz = 1 ]] && ! [[ -n "$placement" ]] ; then
+
+    wmctrl -i -r $windowId -b add,maximized_horz
+  fi
+
+  wmctrl -i -a $windowId
+
+  if [[ $usingXDO == 1 ]]; then 
+    xdotool keydown --clearmodifiers ctrl+alt
+    xdotool key $xdoKey
+    xdotool keyup Ctrl+Alt
+  fi
+}
+
+
+########################### SETTERS ############################
+
+function setDisplayWorkspaceAndPlacement () {
+  IFS=$'-' read workspaceAndDisplay place <<< "$1"
+  unset IF
+  setPlacement $place
+  setWorkspaceAndDisplay $workspaceAndDisplay
+}
+
+#setter for the placement identifier
+function setPlacement () {  
+  local -a validPlacements=( M T B UL L LL OTL TTL UR R LR OTR TTR)
+  if ! [ -z $1 ]; then
+    for p in ${validPlacements[@]}; do
+      if [ "$p" == "$1" ]; then placement=$1; fi
+    done
+    if [ -z $placement ]; then error "the placement $1 is not valid"; fi
+  fi
+}
+
+function setWorkspaceAndDisplay () {
+  IFS=$'.' read suppliedWorkspace suppliedDisplay <<< "$1"
+  unset IFS
+
+  if [[ "$suppliedDisplay" == "" ]] && [[ ${#activeDisplays[@]} == 1 ]]; then
+    printf "%s\n"  "No display was supplied and there is only 1 active display - setting it..."
+    display=${displayList[${activeDisplays[0]}]}
+  fi
+
+  if (( "$suppliedWorkspace" > 0 )) && (( "$suppliedWorkspace" <= "$TOTAL_NO_OF_WORKSPACES" )); then
+ 	 workspace=$suppliedWorkspace
+ 	 verbose "workspace is now: $workspace"
+  else
+    error "There is no workspace with the supplied number ( $suppliedWorkspace )"
+  fi
+  
+  if ! [[ "$suppliedDisplay" == "" ]] && [[ -n ${displayList[$suppliedDisplay]} ]]; then
+ 	 display=${displayList[$suppliedDisplay]}
+ 	 verbose "display is now: $display"
+  else
+    if ! [[ "$suppliedDisplay" == "" ]]; then 
+      error "There is no display with the supplied number ( $suppliedDisplay )"; 
+    fi
+  fi
+}
+
+
+function setDisplayOfWindow () {
+  local -a tempYs=()
+  local -a tempXs=()
+
+  for d in "${!displayList[@]}"; do
+  
+    if (( ${yOffsets[${displayList[$d]}]} <= $windowYOffset - ${workspaceYOffsets[$windowOnWorkspace]} )); then
+      tempYs+=(${yOffsets[${displayList[$d]}]})
+    fi 		    
+    if (( ${xOffsets[${displayList[$d]}]} <= $windowXOffset - ${workspaceXOffsets[$windowOnWorkspace]} )); then
+      tempXs+=(${xOffsets[${displayList[$d]}]})
+    fi
+  done
+  
+  IFS=$'\n'
+  yOffsetOfDisplay=$(echo "${tempYs[*]}" | sort -nr | head -n1) 
+  xOffsetOfDisplay=$(echo "${tempXs[*]}" | sort -nr | head -n1) 
+  unset IFS
+
+  for d in "${!displayList[@]}"; do
+  		echo "forsøger at sætte window on display"
+      echo "tester yOffsets fra DisplayList: ${yOffsets[${displayList[$d]}]}"
+      echo "tester yOffsets of display: $yOffsetOfDisplay"
+      echo "tester xOffsets fra DisplayList: ${xOffsets[${displayList[$d]}]}"
+      echo "tester xOffsets of display: $xOffsetOfDisplay"
+      if (( "${yOffsets[${displayList[$d]}]}" == "$yOffsetOfDisplay" )) && (( "${xOffsets[${displayList[$d]}]}" == "$xOffsetOfDisplay" )); then
+       windowOnDisplay=$d
+       
+      fi
+  done  
+  echo "windowOnDisplay er $windowOnDisplay"
+
+}
+  
+function setWorkspaceOfWindow () {
+  local -i w
+  local -a tempYs=()
+  local -a tempXs=()
+        
+  for w in "${!workspaceYOffsets[@]}"; do
+    if (( ${workspaceYOffsets[$w]} <= $windowYOffset )); then
+      tempYs+=(${workspaceYOffsets[$w]})
+    fi 		    
+    if (( ${workspaceXOffsets[$w]} <= $windowXOffset )); then
+      tempXs+=(${workspaceXOffsets[$w]})
+    fi
+  done
+  
+  IFS=$'\n'
+  yOffsetOfWorkspace=$(echo "${tempYs[*]}" | sort -nr | head -n1) 
+  xOffsetOfWorkspace=$(echo "${tempXs[*]}" | sort -nr | head -n1) 
+  unset IFS
+  
+  for w in "${!workspaceYOffsets[@]}"; do
+
+      if (( ${workspaceYOffsets[$w]} == $yOffsetOfWorkspace )) && (( ${workspaceXOffsets[$w]} == xOffsetOfWorkspace )); then
+       windowOnWorkspace=$w
+      fi
+  done  
+}
+
+########################### WRAPPERS ############################
+
+function listWindows () { # A wrapper for wmctrl -l that tries to take out windows not started by the user himself
+ windowList=$(eval wmctrl -l)
+ catOutput=$(cat $HOME/.config/user-dirs.dirs | grep "XDG_DESKTOP_DIR")
+ i10nDesktop=${catOutput:23:-1}
+ while read -r line; do
+ IFS=$' ' read windowId desktopId client title <<< "$line"
+ unset IFS
+  if [[ "$title" != "unity-launcher" ]] && [[ "$title" != "unity-panel" ]] && [[ "$title" != "unity-dash" ]] && [[ "$title" != "Hud" ]] && [[ "$title" != "XdndCollectionWindowImp" ]] && [[ "$title" != "$i10nDesktop" ]]; then
+ 	printf "%s\n" "$windowId $desktopId $client $title"
+  else
+  	verbose "$windowId $desktopId $client $title"
+  fi
+ done <<< "$windowList"
+}
+
+###################### SETUP FUNCTIONS ########################
+
+function setup () {             #Runs all necessary setup functions for uwc to work
+   getDeskAndScreenInfo "wmctrl -d"
+   getDisplayInfo "DISPLAY=:0 xrandr -q | grep ' connected'" # Hvorfor DISPLAY=:0?
+   findWorkspaces
+}
+ 
+function getDeskAndScreenInfo () { # The following checks every char in the output from wmctrl -d whether it is a white space. This is used afterwards to get desktop and screen dimensions.
+  wmCtrlInput="$1"
+  wmCtrlOutput=$(eval "$wmCtrlInput")
+  spaces=()
+  count=0
+
+  while [[ $count -le ${#wmCtrlOutput} ]]; do
+    char=${wmCtrlOutput:$count:1}
+    if [[ "$char" = " " ]]; then
+      spaces[$i]="${count}"
+      ((i=i+1))
+    fi
+    ((count=count+1))
+  done
+  desktopGeometrylength=$(( ${spaces[4]} - ${spaces[3]} ))
+  desktopGeometry=${wmCtrlOutput:${spaces[3]}:$desktopGeometrylength} # Desktop Geometry - full "workarea" including all workspaces
+  workArealength=$(( ${spaces[11]} - ${spaces[10]} ))
+  workArea=${wmCtrlOutput:${spaces[10]}:$workArealength}
+}
+
+function getDisplayInfo () { # getDisplayInfo Takes a grepped output from xrandr with all active connected displays. This info is used to number the displays from upper left corner to lower right corner one "row" at a time. Result is saved in displayList with nr. as key and connectiontype as value.
+ xrandrInput="$1"	# Argument received
+ xrandrOutput=$(eval "$xrandrInput")
+ local display
+ 
+ while read -r line; do 
+  ((activeDisplays=activeDisplays+1))
+  displArray=($line)
+	
+  if [ ${displArray[2]} == "primary" ]; then # If screen is primary
+   isActive+=(${displArray[0]})
+   isPrimary+=(${displArray[0]})
+   separateDispInfo ${displArray[3]} ${displArray[0]}
+   
+  elif [[ ${displArray[2]} = "("* ]]; then # If screen is not active	
+   ((activeDisplays=activeDisplays-1))	
+   
+  else													# If screen is active but not primary	
+   isActive+=(${displArray[0]})		
+   separateDispInfo ${displArray[2]} ${displArray[0]}		
+  fi	
+ 	
+ done <<< "$xrandrOutput"
+	
+ #Sorts X- and Y-Locs from smallest to largest
+ IFS=$'\n' sortedXOffsets=($(sort <<<"${xOffsetsForSort[*]}"))
+ unset IFS	
+ IFS=$'\n' sortedYOffsets=($(sort <<<"${yOffsetsForSort[*]}"))
+ unset IFS	
+ 
+ declare -i yMin
+ declare -i yMax
+ declare -a displaysLeft
+ 
+ # Initially sets amounts of displays left to number
+ for i in "${!xOffsets[@]}"; do
+  displaysLeft+=( $i )
+ done
+	
+ #Primary sorting loop
+ until (( ${#displaysLeft[@]} == 0 )); do	
+  skip=0
+	
+  ## Find and set display located at 0,0 as 1
+  for display in ${displaysLeft[@]}; do	
+	if (( "${xOffsets[$display]}" == "0" )) && (( "${yOffsets[$display]}" == "0" )); then
+    
+    # checks if another display is located at same coordinates and has a larger y dimension. If, chosen display is changed
+    for extraX in ${displaysLeft[@]}; do	
+     if [ "$extraX" != "$display" ] && (( ${xOffsets[$extraX]} == 0 )) && (( ${yOffsets[$extraX]} == 0 )) && (( ${yDims[$extraX]} > ${yDims[$display]} )); then
+      display=$extraX
+     fi
+    done
+    average=0
+    
+    # Gets the average y dimension for the remaining to set yMax and in some way define when a display is considered being on the next "line"
+    for dYSize in ${displaysLeft[@]}; do
+     ((average=average + ${yDims[$dYSize]} ))
+    done
+    ((average=average/${#displaysLeft[@]} ))
+    yMax=$average #"${yDims[$display]}"
+    yMin="${yOffsets[$display]}"
+    removeDisplay "$display" #Lav disse funktioner generiske - giv array med...
+    addDisplay "$display"
+    skip=1
+    break
+   fi
+  done
+  
+  # If display has been numbered skip to next iteration of loop
+  if [ $skip == 1 ]; then	
+   continue
+  fi
+  
+  declare smallestX=""
+  declare -i x=0
+  
+  # finds smallest x offset that is not 0 and on same line
+  #Finder istedet den største og looper unødigt igennem.
+  for display in ${displaysLeft[@]}; do
+	if (( ${xOffsets[$display]} > "$x" )) && (( ${yOffsets[$display]} < "$yMax" )); then
+    smallestX=$display #Bliver måske ikke brugt?
+    x=${xOffsets[$display]}
+    # Break
+	fi
+  done	
+  
+  # Loops through displays not yet placed to put them on the same row (X location) as the display that set the last min/max Y		
+  for display in ${displaysLeft[@]}; do
+   if (( ${xOffsets[$display]} <= $x )) && (( ${yOffsets[$display]} >= $yMin )) && (( ${yOffsets[$display]} < $yMax )) ; then
+    smallestX=$display
+    x=${xOffsets[$display]}
+   elif (( "${xOffsets[$display]}" == "$x" )) && (( ${yOffsets[$display]} < $yMax )); then
+    if (( "${yOffsets[$display]}" < "${yOffsets[$smallestX]}" )); then
+     smallestX=$display
+     x=${xOffsets[$display]}
+    fi
+   fi
+  done
+ 
+  if ! [ -z "$smallestX" ]; then
+   removeDisplay "$smallestX"
+   addDisplay "$smallestX"	
+  fi
+
+  if [ ${#displaysLeft[@]} == 0 ]; then
+   continue
+  fi
+	
+  #tests if any displays are left where y is within yMax
+  for display in ${displaysLeft[@]}; do
+   if (( ${yOffsets[$display]} < $yMax )); then
+    skip=1
+    break
+   fi
+  done
+	
+  if [ $skip == 1 ]; then	
+   continue
+  fi	
+
+  declare smallestX="${displaysLeft[-1]}" # -1 Refers to last element in array
+  declare -i x=${xOffsets[$smallestX]}
+
+  for display in ${displaysLeft[@]}; do		
+   if (( "${xOffsets[$display]}" < "$x" )); then
+    smallestX=$display
+    x=${xOffsets[$display]}		
+   elif (( "${xOffsets[$display]}" == "$x"  )); then
+    if (( "${yOffsets[$display]}" < "${yOffsets[$smallestX]}" )); then
+     smallestX=$display
+     x=${xOffsets[$display]}
+    fi
+   fi
+  done
+	
+  removeDisplay "$smallestX"
+  addDisplay "$smallestX"
+  yMax="${yDims[$smallestX]}"
+  yMin="${yOffsets[$smallestX]}"
+ done
+
+ for finalDisplayCheck in ${!displayList[@]}; do
+  verbose "Display nr. $finalDisplayCheck is: ${displayList[$finalDisplayCheck]}"
+ done
+}
+
+function findWorkspaces () {
+ IFS=$'x' read dgX dgY <<< "$desktopGeometry"
+ unset IFS
+ 
+ verbose "Total desktop geometry is: $desktopGeometry"
+ verbose "Nr. of vertical workplaces: $VERTICAL_WORKSPACES Nr. of horisontal workplaces: $HORISONTAL_WORKSPACES " 
+ verbose "Totale nr. of workspaces is: $TOTAL_NO_OF_WORKSPACES"
+
+ testhWS=3
+ testvWS=4
+ wLength=$(( $dgX/$HORISONTAL_WORKSPACES ))
+ wHeight=$(( $dgY/$VERTICAL_WORKSPACES ))
+ declare -i wNr=0
+ #declare -i hLimit=0
+ #declare -i vLimit=0
+ 
+ declare -a possibleXOffsets
+ declare -a possibleYOffsets
+ 
+ for (( hLimit=0; hLimit<=$HORISONTAL_WORKSPACES-1; hLimit++ )) do
+  tempX=$(( $dgX-($wLength*($HORISONTAL_WORKSPACES-$hLimit)) ))
+  possibleXOffsets+=($tempX)
+ done
+  
+ for (( vLimit=0; vLimit<=$VERTICAL_WORKSPACES-1; vLimit++ )) do
+  tempY=$(( $dgY-($wHeight*($VERTICAL_WORKSPACES-$vLimit)) ))
+  possibleYOffsets+=($tempY)
+ done
+ 
+ for (( vLimit=0; vLimit<=$VERTICAL_WORKSPACES-1; vLimit++ )) do
+  
+  for (( hLimit=0; hLimit<=$HORISONTAL_WORKSPACES-1; hLimit++ )) do
+   wNr=$(( wNr+1 ))
+   workspaceXOffsets[$wNr]="${possibleXOffsets[$hLimit]}"	  
+   workspaceYOffsets[$wNr]="${possibleYOffsets[$vLimit]}"
+  done
+ done
+}
+
+########################### HELPERS ############################
+
+# uwc relies on xwininfo, grep, wmctrl, xdotool
+function checkDependencies () {
+  missingDependencies=0
+
+  if [ hash xwininfo 2>/dev/null ]; then
+    error "uwc relies on xwininfo, but it doesn't seem to be installed on your system."
+    missingDependencies=1
+  fi
+  if [ hash wmctrl 2>/dev/null ]; then
+    error "uwc relies on wmctrl, but it doesn't seem to be installed on your system."
+    missingDependencies=1
+  fi
+  if [ hash xdotool 2>/dev/null ]; then
+    error "uwc relies on xdotool, but it doesn't seem to be installed on your system."
+    missingDependencies=1
+  fi
+
+  if ! [ "$missingDependencies" -eq "0" ]; then
+    exit 1
+  fi
+
+}
+
+function separateDispInfo () { #takes a display line from xrandr and separates x & y coordinates and x & y offsets. Identifiable by connection name
+ dims=$1
+ conn=$2
+ IFS='x+' read x y off_x off_y <<< "$dims"
+ xDims["$conn"]="$x"; yDims["$conn"]="$y"; xOffsets["$conn"]="$off_x"; yOffsets["$conn"]="$off_y"	
+ xOffsetsForSort+=($off_x); yOffsetsForSort+=($off_y)		
+}
+
+function removeDisplay () { # For each display added to the displaylist this function is called to remove it from the list of displaysLeft
+ for i in "${!displaysLeft[@]}"; do
+  if [[ "${displaysLeft[$i]}" = "$1" ]]; then
+   unset displaysLeft[$i]
+  fi
+ done
+}	
+
+function addDisplay () { # Adds display to displayList with it's number from left to right, top to bottom as identifier
+ displayList[$screenNr]="$1"
+ screenNr=$(( screenNr + 1 ))	
+}
+
+function verbose () { #Function used for verbose output. SHOULD BE REFACTORED - NO NEED FOR LINES WITHOUT \n
+
+    if [[ $verbose -eq 1 ]]; then
+      if ! [ -z "$2" ] && [ "$2" = "\n" ]; then
+        printf "%s\n"  "$1\n"
+      else
+        printf "%s\n"  "$1"        
+      fi
+    fi
+}
+
+function error () { #used to display error messages
+  local red=$'\e[1;31m'
+  local white=$'\e[0m'
+  errorTicker=$(($errorTicker + 1))
+  (>&2 printf "%s\n"  "${red}ERROR:${white} $1")
+}
+
+function showHelp () { # shows the help when -h is chosen from commandline using a here doc with standard out.
+cat <<-END
+
+uwc (Unity Window Controller) v1.01 
+
+Copyright (C) 2016 Anders Lykke Gade
+
+-----
+ABOUT
+-----
+
+uwc is a script to ease manipulation of windows in the Unity 7 environment. 
+It does so by wrapping wmctrl and xdotool with an interface that dynamically 
+determines your monitor and workspace setup and provides predetermined 
+placements for windows on these. For more info visit http:/github/[?????].
+
+---------
+LICENSING
+---------
+
+This script is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+
+This script is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+See the GNU General Public License for more details. 
+
+You should have received a copy of the GNU General Public License along with this program.
+If not, see http://www.gnu.org/licenses/.
+
+------
+USAGE
+------
+
+Actions:
+
+   -c OPTIONAL: [ -r "Window name" -c]      Close all user opened windows. This will close 
+                                            the windows gracefully with the wmctrl -c 
+                                            command and let you save work if necessary.
+                                            If a window name argument is supplied only 
+                                            this window will be closed. If a window name 
+                                            argument is supplied you can use the options 
+                                            -i or -F.
+
+   -d                                       Displays available workspaces and monitors in 
+                                            the format [Workspace].[Monitors].
+                                            Both workspaces and monitors are numbered from
+                                            upper left corner to lower right. If verbose is
+                                            set, all information known to uwc will be
+                                            displayed.
+
+   -h                                       Display this help.
+
+   -I [ -r "Window name" -I]                Display information about the specified window.                       
+
+   -l (wmctrl action)                       Lists available user initiated windows. 
+                                            If verbose is set all windows are displayed.
+
+   -m  <Workspace nr.>                      Move the viewport to the desired workspace. 
+                                            Workspaces are numbered from upper left to 
+                                            lower right.
+
+   -p  [Workspace nr].[Screen nr.]-[placement]
+                                            Needs a window specified in front and takes 
+                                            three arguments: workspace, screen nr. 
+                                            (separated by a full stop) and placement) 
+                                            of the window (separated by a hyphen). 
+                                            
+                                            Placement options are:
+                                            M: Maximized, 
+                                            T: Upper half, 
+                                            B: Lower half,
+                                            R: Right half, 
+                                            UR: Upper right corner, 
+                                            LR: Lower right corner,
+                                            OTR: Onethird horizontally - right-aligned, 
+                                            TTR: Twothirds horizontally - right-aligned,
+                                            L: Left half, 
+                                            UL: Upper left corner, 
+                                            LL: Lower left corner,
+                                            OTL: Onethird horizontally - left-aligned, 
+                                            TTL: Twothirds horizontally - left-aligned,
+
+   -r [Window name] (wmctrl action)         Specifies the window to be relocated.
+
+   -s                                       Setup uwc from the output of xrandr and wmctrl.
+                                            This is only necessary if running in script
+                                            mode (see -S).
+
+Options:
+
+   -F (wmctrl option)                       Window name is an exact title and the window 
+                                            name argument is case sensitive.
+
+   -i (wmctrl option)                       Use the windows id instead of name to 
+                                            identify it.
+
+   -S                                       Run uwc command in scripting mode. 
+                                            This means that screen and workspace 
+                                            information will not be gathered with each 
+                                            call. Instead uwc will have to be called 
+                                            at the beginning of script with the setup 
+                                            action (-s).
+
+   -v                                       Enable verbose output.
+
+-------
+CONTACT
+-------
+Author and current maintainer Anders Lykke Gade < @gmail.com > 
+END
+}
+
+################################################################
+########################### PROCESS ############################
+################################################################
+
+main "$@"
