@@ -7,6 +7,7 @@ Built for Unity 7 (R.I.P) and has been tested on Ubuntu 16.04.
 |:---:|:---:|:--:|
 | Tray menu | Workset dialog | Application dialog |
 
+[Demonstration on Youtube](https://www.youtube.com/watch?v=MYKwPBCRudo)
 
 ### Features
 
