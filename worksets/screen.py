@@ -33,7 +33,7 @@ class Screen():
         self._active_worksets = []
 
     def update_screen_config(self):
-        self.logger.debug("Aquiring screen configuration (desktops & monitors")
+        self.logger.debug("Aquiring screen configuration (desktops & monitors)")
         self.desktops = self.wm.get_desktops()
         self.monitors = self.sort_monitors(self.wm.get_monitors())
 
@@ -78,6 +78,7 @@ class Screen():
             self.logger.debug("A window was returned: " + window.information())
             placement = app.get_placement(self.desktops, self.monitors)
             window.move(self.wm, placement)
+            self.wm.focus_window(window.wid)
 
     def run_workset(self, workset):
         """ Run workset (for test in workset_dialog)."""

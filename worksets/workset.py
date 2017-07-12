@@ -58,6 +58,7 @@ class Workset():
         if self.init_script:
             self._run_init_script()
 
+        wid_of_last_window = None
         for app in self.apps:
             placement = app.get_placement(desktops, monitors)
             if app.creates_window is True:
@@ -65,12 +66,17 @@ class Workset():
                 if window is not None:
                     time.sleep(1)
                     window.move(wm, placement)
+                    wid_of_last_window = window.wid
+                    self.logger.debug('window.wid is: ' + window.wid + " wid_of_last_window is: " + wid_of_last_window)
                     self.windows.append(window)
                 else:
                     self.logger.warning('No window could be found for application ' +
                                         app.name)
             else:
                 wm.run_app(app)
+        if wid_of_last_window:
+            self.logger.debug("Focusing window")
+            wm.focus_window(wid_of_last_window)
         self.logger.debug("Workset " + self.name + " is now active")
         self.active = True
 

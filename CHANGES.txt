@@ -1,0 +1,3 @@
+Refactored wmctrl.py
+
+created a separate method for parsing a desktop_string from get_desktops() - get current_desktop can now be used somewhat the same in both unity and gnomeshell implementations

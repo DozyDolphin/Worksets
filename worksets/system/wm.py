@@ -34,6 +34,8 @@ class Wm():
         if operating_system == 'linux':
             if desktop_env == 'unity':
                 from .unitywm import UnityWm as WmImpl
+            if desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome':
+                from .gnomeshell_wm import GnomeShellWm as WmImpl
 
         try:
             self._wm = WmImpl()
@@ -63,6 +65,9 @@ class Wm():
 
     def get_window(self):
         return self._wm.get_window()
+
+    def focus_window(self, window_wid):
+        self._wm.focus_window(window_wid)
 
     def run_app(self, app):
         self._wm.run_app(app)

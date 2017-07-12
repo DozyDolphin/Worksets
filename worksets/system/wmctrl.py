@@ -99,57 +99,80 @@ class Wmctrl():
         return windows
 
     def get_desktops(self):
+        desktops = []
+        output = self._get_desktops_raw()
+        desktop_strings = output.split('\n')
+        for desktop_string in desktop_strings:
+            desktop = self._parse_desktop_string(desktop_string)
+            desktops.append(desktop)
+        return desktops
+
+    def _get_desktops_raw(self):
         param = ' -d'
         output = subprocess.getoutput(self.app + param)
-        desktops = self.parse_desktop_list(output)
-        return desktops
+        return output
 
-    def parse_desktop_list(self, input):
-        desktops = []
+    def _parse_desktop_string(self, desktop_string):
 
-        input_lines = input.split('\n')
-        for line in input_lines:
-            desktop = {}
-            raw = line.split(' ')
-            clean = [i for i in raw if i != '']
+        desktop = {}
+        raw_list = desktop_string.split(' ')
+        clean = [i for i in raw_list if i != '']
+        self.logger.debug('desktop_string som clean list er: ' + str(clean))
+        wa_sizes = [
+            int(wa_size)
+            for wa_size in clean[8].split('x')]
+        wa_width, wa_height = wa_sizes
 
-            wa_sizes = [
-                int(wa_size)
-                for wa_size in clean[-2].split('x')]
-            wa_width, wa_height = wa_sizes
+        wa_coordinates = [
+            int(wa_coordinate)
+            for wa_coordinate in clean[7].split(',')]
+        wa_x, wa_y = wa_coordinates
+        workarea = self.Geometry(wa_x, wa_y, wa_width, wa_height)
 
-            wa_coordinates = [
-                int(wa_coordinate)
-                for wa_coordinate in clean[-3].split(',')]
-            wa_x, wa_y = wa_coordinates
-            workarea = self.Geometry(wa_x, wa_y, wa_width, wa_height)
-
+        if clean[5] == 'N/A':
+            vp_x, vp_y = [0, 0]
+        else:
             vp_coordinates = [
                 int(coordinate)
-                for coordinate in clean[-5].split(',')]
+                for coordinate in clean[5].split(',')]
             vp_x, vp_y = vp_coordinates
-            viewport = self.Coordinates(vp_x, vp_y)
+        viewport = self.Coordinates(vp_x, vp_y)
 
-            dg_sizes = [
-                int(dg_size)
-                for dg_size in clean[-7].split('x')]
-            dg_width, dg_height = dg_sizes
-            # This doesn't take into account if multiple desktops - which
-            # doesn't exist in unity - has a coordinate. This will lead to
-            # unexpected behaviour if that is the case.
+        dg_sizes = [
+            int(dg_size)
+            for dg_size in clean[3].split('x')]
+        dg_width, dg_height = dg_sizes
+        # This doesn't take into account if multiple desktops - which
+        # doesn't exist in unity - has a coordinate. This will lead to
+        # unexpected behaviour if that is the case.
 
-            desktop_geometry = self.Geometry(0, 0, dg_width, dg_height)
+        desktop_geometry = self.Geometry(0, 0, dg_width, dg_height)
 
-            desktop['title'] = clean[-1]
-            desktop['workarea'] = workarea
-            desktop['viewport'] = viewport
-            desktop['desktop_geometry'] = desktop_geometry
-            desktop['desktop_id'] = clean[0]
+        if len(clean) > 9:
+            if len(clean) == 10:
+                title = clean[9]
+            elif len(clean) == 11:
+                title = clean[9] + ' ' + clean[10]
+        else:
+            title = ''
 
-            desktops.append(desktop)
+        desktop['title'] = title
+        desktop['workarea'] = workarea
+        desktop['viewport'] = viewport
+        desktop['desktop_geometry'] = desktop_geometry
+        desktop['desktop_id'] = clean[0]
 
-        return desktops
+        return desktop
 
+    def switch_to_desktop(self, desktop_id):
+        argument = '-s'
+        parameters = desktop_id
+        subprocess.Popen([self.app, argument, parameters],
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         stdin=subprocess.PIPE)
+
+    # Should be renamed to change_wiewport (and reflected in unity_wm)
     def move_to_desktop(self, desktop):
         argument = '-o'
         parameters = str(desktop.x) + ',' + str(desktop.y)
@@ -173,19 +196,28 @@ class Wmctrl():
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE)
 
+    def move_window_to_desktop(self, window, desktop_id):
+        subprocess.Popen(
+            [self.app, '-i', '-r', window.wid, '-t', desktop_id],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+
+    def focus_window(self, window_wid):
+        self.logger.debug('calling wmctrl with command: ')
+        self.logger.debug('wmctrl -i -a ' + window_wid)
+        subprocess.Popen(
+            [self.app, '-i', '-a', window_wid],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+
     def close_window(self, window):
         subprocess.Popen(
             [self.app, '-i', '-c', str(window.wid)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             stdin=subprocess.PIPE)
-
-    def set_focus(self, wid):
-        subprocess.Popen(
-            [self.app, '-i', '-a', str(wid)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            stdin=subprocess.PIPE)       
 
     def remove_vert_and_horz_max(self, wid):
         is_vert_maxed = subprocess.Popen(
@@ -232,4 +264,10 @@ class Wmctrl():
 
     def get_current_desktop(self):
         '''Find the desktop marked with an * in the output of wmctrl -d'''
-        pass
+        current_desktop = None
+        desktop_output = self._get_desktops_raw()
+        desktop_strings = desktop_output.split('\n')
+        for desktop_string in desktop_strings:
+            if '*' in desktop_string:
+                current_desktop = self._parse_desktop_string(desktop_string)
+        return current_desktop
