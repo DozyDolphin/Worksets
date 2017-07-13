@@ -35,6 +35,7 @@ class Wm():
 
         operating_system = platform.system().lower()
         wm_name = self.wmctrl.get_wm_and_env_info()['name'].lower()
+        print("wm_name is: " + wm_name)
         try:
             desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
         except KeyError:
@@ -44,7 +45,7 @@ class Wm():
         if operating_system == 'linux':
             if desktop_env == 'unity':
                 from .unity_wm import UnityWm as WmImpl
-            if desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome':
+            if desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome' or wm_name == 'gnome shell':
                 from .gnomeshell_wm import GnomeShellWm as WmImpl
             if desktop_env == 'openbox':
                 from .gnomeshell_wm import GnomeShellWm as WmImpl

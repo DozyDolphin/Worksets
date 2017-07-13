@@ -23,7 +23,7 @@ import logging
 
 from .publisher import Publisher
 from .gui.gui import Gui
-from .system import Wm
+from .system.wm import Wm
 from .settings import Settings
 from .db import Db
 from .screen import Screen

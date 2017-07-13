@@ -35,7 +35,7 @@ class Wmctrl():
         self.Dimensions = namedtuple('Dimensions', ' width height')
 
     def get_wm_and_env_info(self):
-        param = '-m'
+        param = ' -m'
         output = subprocess.getoutput(self.app + param)
         wm_and_environment = self._parse_wm_and_env_info(output)
         return wm_and_environment
@@ -45,7 +45,9 @@ class Wmctrl():
         input_lines = input.split('\n')
 
         for line in input_lines:
+            self.logger.debug("line from wm_info is: " + line)
             key, value = line.split(':', 1)
+            self.logger.debug("key is: '" + key + "' value is '" + value + "'")
             if key == 'Window manager\'s "showing the desktop" mode':
                 key = "show_desktop_mode"
             wm_and_environment[key.lower()] = value.lstrip()
@@ -164,6 +166,14 @@ class Wmctrl():
 
         return desktop
 
+    def change_number_of_desktops(self, no):
+        argument = '-n'
+        parameters = no
+        subprocess.Popen([self.app, argument, parameters],
+                         stdout=subprocess.PIPE,
+                         stderr=subprocess.PIPE,
+                         stdin=subprocess.PIPE)
+
     def switch_to_desktop(self, desktop_id):
         argument = '-s'
         parameters = desktop_id
@@ -172,7 +182,6 @@ class Wmctrl():
                          stderr=subprocess.PIPE,
                          stdin=subprocess.PIPE)
 
-    # Should be renamed to change_wiewport (and reflected in unity_wm)
     def change_viewport(self, desktop):
         argument = '-o'
         parameters = str(desktop.x) + ',' + str(desktop.y)
@@ -189,6 +198,9 @@ class Wmctrl():
             str(window.y) + ',' +
             str(window.width) + ',' +
             str(window.height))
+
+        self.logger.debug("wmctrl moving window with command: ")
+        self.logger.debug("wmctrl -i -r " + window.wid + ' -e ' + position)
 
         subprocess.Popen(
             [self.app, '-i', '-r', window.wid, '-e', position],

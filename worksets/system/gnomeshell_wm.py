@@ -83,3 +83,49 @@ class GnomeShellWm():
 
     def close_window(self, window):
         self.wmctrl.close_window(window)
+
+    def get_xdokey(self, placement_type):
+        return {
+            'M': 'KP_Begin',
+            'T': 'KP_Up',
+            'B': 'KP_Down',
+            'UL': 'KP_Home',
+            'L': 'KP_Left',
+            'LL': 'KP_End',
+            'UR': 'KP_Prior',
+            'R': 'KP_Right',
+            'LR': 'KP_Next',
+            'OTL': None,
+            'TTL': None,
+            'OTR': None,
+            'TTR': None
+        }[placement_type]
+
+    def xdo_press_key(self, xdo_key):
+        self.logger.debug("Uses xdotool, sets modifiers...")
+        subprocess.Popen(
+            ['xdotool', 'keydown', '--clearmodifiers', 'ctrl+alt'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+        self.logger.debug("Uses xdotool, presses key...")
+        subprocess.Popen(
+            ['xdotool', 'key', xdo_key],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+        self.logger.debug("Uses xdotool, clears modifiers...")
+        subprocess.Popen(
+            ['xdotool', 'keyup', 'ctrl+alt'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            stdin=subprocess.PIPE)
+
+    def xdo_with_os(self, xdo_key):
+        os.system('xdotool keydown --clearmodifiers ctrl+alt')
+        os.system('xdotool key ' + xdo_key)
+        os.system('xdotool keyup ctrl+alt')
+
+    def xdo_activate_window(self, window_name):
+        self.logger.debug('Using xdotool to activate window')
+        os.system('xdotool search --name "' + window_name + '" windowactivate')
