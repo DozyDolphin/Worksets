@@ -18,9 +18,12 @@ along with Worksets.  If not, see <http://www.gnu.org/licenses/>.
 '''
 
 import logging
+import subprocess
 import platform
 import os
 import time
+from collections import namedtuple
+from .wmctrl import Wmctrl
 
 
 class Wm():
@@ -28,13 +31,22 @@ class Wm():
     def __init__(self, publisher):
         self.logger = logging.getLogger(' Wm')
         self.publisher = publisher
+        self.wmctrl = Wmctrl()
+
         operating_system = platform.system().lower()
-        desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
+        wm_name = self.wmctrl.get_wm_and_env_info()['name'].lower()
+        try:
+            desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
+        except KeyError:
+            self.logger.debug("XDG_CURRENT_DESKTOP variable isn't set - using wmctrl name")
+            desktop_env = wm_name
 
         if operating_system == 'linux':
             if desktop_env == 'unity':
-                from .unitywm import UnityWm as WmImpl
+                from .unity_wm import UnityWm as WmImpl
             if desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome':
+                from .gnomeshell_wm import GnomeShellWm as WmImpl
+            if desktop_env == 'openbox':
                 from .gnomeshell_wm import GnomeShellWm as WmImpl
 
         try:
@@ -49,45 +61,87 @@ class Wm():
             self.logger.critical(message_list[0] + ' ' + message_list[1])
 
     def get_monitors(self):
-        return self._wm.get_monitors()
+        output = subprocess.getoutput("xrandr -q | grep ' connected'")
+        monitors = self._parse_xrandr_output(output)
+        return monitors
+
+    def _parse_xrandr_output(self, input):
+        monitors = []
+        input_lines = input.split('\n')
+        Monitor_active = namedtuple(
+            'Monitor_active',
+            'name connected active primary x y width height phys_width phys_height')
+        Monitor_inactive = namedtuple(
+            'Monitor_inactive',
+            'name connected active')
+
+        for line in input_lines:
+            raw = line.split(' ')
+            index_of_geometry = 2
+
+            name = raw[0]
+            active = False
+            connected = False
+            primary = False
+
+            if raw[1] == 'connected':
+                connected = True
+
+                if raw[2] == 'primary':
+                    primary = True
+                    index_of_geometry += 1
+
+            if '(' not in raw[index_of_geometry]:
+                active = True
+                geometry_raw = raw[index_of_geometry].split('+')
+                dimensions_raw = geometry_raw[0].split('x')
+                x = int(geometry_raw[1])
+                y = int(geometry_raw[2])
+                width = int(dimensions_raw[0])
+                height = int(dimensions_raw[1])
+                phys_width = int(raw[-3][:-2])
+                phys_height = int(raw[-1][:-2])
+
+            if active:
+                monitor = Monitor_active(
+                    name,
+                    connected,
+                    active,
+                    primary,
+                    x,
+                    y,
+                    width,
+                    height,
+                    phys_width,
+                    phys_height)
+            if not active:
+                monitor = Monitor_inactive(name, connected, active)
+            # Sort monitors here
+            monitors.append(monitor)
+        return monitors
 
     def get_desktops(self):
         return self._wm.get_desktops()
 
-    def get_current_desktop(self):
-        return self._wm.get_current_desktop()
+    # Is this used outside?
+    #def get_current_desktop(self):
+    #    return self._wm.get_current_desktop()
 
-    def get_workspaces(self):
-        return self._wm.get_workspaces()
+    # Is this used outside?
+    # def get_workspaces(self):
+    #   return self._wm.get_workspaces()
 
     def get_windows(self):
         return self._wm.get_windows()
 
-    def get_window(self):
-        return self._wm.get_window()
-
     def focus_window(self, window_wid):
         self._wm.focus_window(window_wid)
-
-    def run_app(self, app):
-        self._wm.run_app(app)
 
     def move_window(self, window, placement, placement_type):
         self._wm.move_window(window, placement, placement_type)
 
     def close_window(self, window):
         self._wm.close_window(window)
-
-    def get_user_home(self):
-        home = os.path.expanduser('~')
-        return home
-
-    def get_config_dir(self):
-        return self.get_user_home() + self._wm.get_config_dir()
-
-    def test_executable(self, executable):
-        return self._wm.test_executable(executable)
-
 
     def run_app_and_get_window(self, app):
         windows_before = self.get_windows()
@@ -220,3 +274,34 @@ class Wm():
             time.sleep(amount_to_sleep)
 
         return chosen_window
+
+    def run_app(self, app):
+        full_cmd_list = None
+
+        if app.parameters:
+            full_cmd_list = app.get_full_cmd_as_list()
+        else:
+            full_cmd_list = [app.executable]
+        self.logger.debug("Trying to execute application: " + str(full_cmd_list))
+        pid = subprocess.Popen(full_cmd_list,
+                               stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE,
+                               stdin=subprocess.PIPE).pid
+        self.logger.debug("Pid returned: " + str(pid))
+        return pid
+
+    def test_executable(self, executable):
+        output = subprocess.run(['which', executable],
+                                stdout=subprocess.PIPE).stdout.decode('utf-8')
+        self.logger.debug("Executable test returned: " + output)
+        if output == '':
+            return False
+        else:
+            return True
+
+    def get_user_home(self):
+        home = os.path.expanduser('~')
+        return home
+
+    def get_config_dir(self):
+        return self.get_user_home() + '/.config/worksets/'

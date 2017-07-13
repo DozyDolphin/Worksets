@@ -173,7 +173,7 @@ class Wmctrl():
                          stdin=subprocess.PIPE)
 
     # Should be renamed to change_wiewport (and reflected in unity_wm)
-    def move_to_desktop(self, desktop):
+    def change_viewport(self, desktop):
         argument = '-o'
         parameters = str(desktop.x) + ',' + str(desktop.y)
         subprocess.Popen([self.app, argument, parameters],

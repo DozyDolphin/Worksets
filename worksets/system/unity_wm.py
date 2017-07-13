@@ -39,72 +39,12 @@ class UnityWm():
         self.logger = logging.getLogger(' UnityWm ')
         self.wmctrl = Wmctrl()
 
-    def get_monitors(self):
-        output = subprocess.getoutput("xrandr -q | grep ' connected'")
-        monitors = self._parse_xrandr_output(output)
-        return monitors
-
-    def _parse_xrandr_output(self, input):
-        monitors = []
-        input_lines = input.split('\n')
-        Monitor_active = namedtuple(
-            'Monitor_active',
-            'name connected active primary x y width height phys_width phys_height')
-        Monitor_inactive = namedtuple(
-            'Monitor_inactive',
-            'name connected active')
-
-        for line in input_lines:
-            raw = line.split(' ')
-            index_of_geometry = 2
-
-            name = raw[0]
-            active = False
-            connected = False
-            primary = False
-
-            if raw[1] == 'connected':
-                connected = True
-
-                if raw[2] == 'primary':
-                    primary = True
-                    index_of_geometry += 1
-
-            if '(' not in raw[index_of_geometry]:
-                active = True
-                geometry_raw = raw[index_of_geometry].split('+')
-                dimensions_raw = geometry_raw[0].split('x')
-                x = int(geometry_raw[1])
-                y = int(geometry_raw[2])
-                width = int(dimensions_raw[0])
-                height = int(dimensions_raw[1])
-                phys_width = int(raw[-3][:-2])
-                phys_height = int(raw[-1][:-2])
-
-            if active:
-                monitor = Monitor_active(
-                    name,
-                    connected,
-                    active,
-                    primary,
-                    x,
-                    y,
-                    width,
-                    height,
-                    phys_width,
-                    phys_height)
-            if not active:
-                monitor = Monitor_inactive(name, connected, active)
-            # Sort monitors here
-            monitors.append(monitor)
-        return monitors
-
     def get_desktops(self):
         Desktop = namedtuple('Desktop', 'x y width height no')
         desktops = []
 
         wmctrl_desktops = self.wmctrl.get_desktops()
-        workspaces = self.get_workspaces()
+        workspaces = self._get_workspaces()
         wmctrl_desktop = wmctrl_desktops[0]
 
         desktop_geometry = wmctrl_desktop['desktop_geometry']
@@ -133,7 +73,7 @@ class UnityWm():
 
         return desktops
 
-    def get_current_desktop(self):
+    def _get_current_desktop(self):
         current_desktop_coordinates = self.wmctrl.get_desktops()[0]['viewport']
         current_x = current_desktop_coordinates.x
         current_y = current_desktop_coordinates.y
@@ -144,7 +84,7 @@ class UnityWm():
 
         return current_desktop
 
-    def get_workspaces(self):
+    def _get_workspaces(self):
         Workspaces = namedtuple('Workspaces', 'horz vert total')
         dconf_horz = 'dconf read /org/compiz/profiles/unity/plugins/core/hsize'
         dconf_vert = 'dconf read /org/compiz/profiles/unity/plugins/core/vsize'
@@ -164,14 +104,14 @@ class UnityWm():
         return windows
 
     def move_window(self, window, new_desktop, placement_type):
-        current_desktop = self.get_current_desktop()
+        current_desktop = self._get_current_desktop()
         self.logger.debug("Attempting to move  window " + window.title)
 
         self.xdo_activate_window(window.title)
         self.wmctrl.remove_vert_and_horz_max(window.wid)
         if current_desktop.no != new_desktop.no:
             self.logger.debug("Moving viewport to desktop " + str(new_desktop.no))
-            self.wmctrl.move_to_desktop(new_desktop)
+            self.wmctrl.change_viewport(new_desktop)
 
         self.wmctrl.move_window(window)
         self.logger.debug("Windows placement type is: " + placement_type)
@@ -205,22 +145,6 @@ class UnityWm():
 
     def close_window(self, window):
         self.wmctrl.close_window(window)
-
-    def run_app(self, app):
-
-        full_cmd_list = None
-
-        if app.parameters:
-            full_cmd_list = app.get_full_cmd_as_list()
-        else:
-            full_cmd_list = [app.executable]
-        self.logger.debug("Trying to execute application: " + str(full_cmd_list))
-        pid = subprocess.Popen(full_cmd_list,
-                               stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE,
-                               stdin=subprocess.PIPE).pid
-        self.logger.debug("Pid returned: " + str(pid))
-        return pid
 
     def get_xdokey(self, placement_type):
         return {
@@ -267,15 +191,3 @@ class UnityWm():
     def xdo_activate_window(self, window_name):
         self.logger.debug('Using xdotool to activate window')
         os.system('xdotool search --name "' + window_name + '" windowactivate')
-
-    def test_executable(self, executable):
-        output = subprocess.run(['which', executable],
-                                stdout=subprocess.PIPE).stdout.decode('utf-8')
-        self.logger.debug("Executable test returned: " + output)
-        if output == '':
-            return False
-        else:
-            return True
-
-    def get_config_dir(self):
-        return '/.config/worksets/'
