@@ -45,10 +45,12 @@ class Wm():
         if operating_system == 'linux':
             if desktop_env == 'unity':
                 from .unity_wm import UnityWm as WmImpl
-            if desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome' or wm_name == 'gnome shell':
+            elif desktop_env == 'gnome' or desktop_env == 'gnome-classic:gnome' or wm_name == 'gnome shell':
                 from .gnomeshell_wm import GnomeShellWm as WmImpl
-            if desktop_env == 'openbox':
+            elif desktop_env == 'openbox':
                 from .gnomeshell_wm import GnomeShellWm as WmImpl
+            elif desktop_env == 'x-cinnamon':
+                from .cinnamon_wm import CinnamonWm as WmImpl
 
         try:
             self._wm = WmImpl()
