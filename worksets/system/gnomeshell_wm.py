@@ -30,6 +30,8 @@ class GnomeShellWm():
 
     '''
 
+    header_bar_windows = ['evince','nautilus','gnome-tweak-tool']
+
     def __init__(self):
         self.logger = logging.getLogger(' GnomeShellWm ')
         self.wmctrl = Wmctrl()
@@ -73,9 +75,18 @@ class GnomeShellWm():
         if current_desktop.no != new_desktop.no:
             new_desktop_id = str(int(new_desktop.no) - 1)
             self.wmctrl.move_window_to_desktop(window, new_desktop_id)
-
+        self.hack_for_gtk3_windows(window)
         self.wmctrl.move_window(window)
         self.logger.debug("Windows placement type is: " + placement_type)
+
+    def hack_for_gtk3_windows(self, window):
+        wm_name = window.wm_class.split('.')
+        if wm_name[0] in self.header_bar_windows:
+            print("HACK NECESSARY")
+            window.x = str(int(window.x) - 25)
+            window.y = str(int(window.y) - 25)
+            window.width = str(int(window.width) + 50)
+            window.height = str(int(window.height) + 25)
 
     def focus_window(self, window_wid):
         self.logger.debug('Attempting to focus')
