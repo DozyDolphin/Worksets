@@ -28,7 +28,7 @@ with open(path.join(package_dir, 'README.rst'), encoding='utf-8') as file:
 setup(
     name='worksets',
 
-    version='0.1',
+    version='0.1.1',
 
     description='Worksets helps you to quickly launch and arrange multiple applications in your desktop environment to support a specific workflow.',
 
