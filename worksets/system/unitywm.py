@@ -148,13 +148,22 @@ class UnityWm():
         Workspaces = namedtuple('Workspaces', 'horz vert total')
         dconf_horz = 'dconf read /org/compiz/profiles/unity/plugins/core/hsize'
         dconf_vert = 'dconf read /org/compiz/profiles/unity/plugins/core/vsize'
-
-        workspaces_horz = int(subprocess.getoutput(dconf_horz))
-        workspaces_vert = int(subprocess.getoutput(dconf_vert))
+        workspaces_horz = subprocess.getoutput(dconf_horz)
+        workspaces_vert = subprocess.getoutput(dconf_vert)
+        # If workspace changer hasn't been enabled h- and v-size doesn't seem to be set.
+        if not workspaces_horz:
+            self.logger.debug("unity/plugins/core/hsize not set - setting horisontal workspaces to '1'")
+            workspaces_horz = '1'
+        if not workspaces_vert:
+            self.logger.debug("unity/plugins/core/vsize not set - setting vertical workspaces to '1'")
+            workspaces_vert = '1'
         workspaces_total = int(workspaces_vert) * int(workspaces_horz)
+        self.logger.debug("Horisontal number of workspaces is: " + str(workspaces_horz))
+        self.logger.debug("Vertical number of workspaces is: " + str(workspaces_vert))
+        self.logger.debug("Total number of workspaces is: " + str(workspaces_total))
         workspaces = Workspaces(
-            workspaces_horz,
-            workspaces_vert,
+            int(workspaces_horz),
+            int(workspaces_vert),
             workspaces_total)
 
         return workspaces

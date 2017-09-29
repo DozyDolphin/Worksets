@@ -21,18 +21,26 @@ import logging
 import platform
 import os
 import time
-
+from .wmctrl import Wmctrl
 
 class Wm():
 
     def __init__(self, publisher):
         self.logger = logging.getLogger(' Wm')
         self.publisher = publisher
+        self.wmctrl = Wmctrl()
+
         operating_system = platform.system().lower()
-        desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
+
+        try:
+            desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
+        except KeyError:
+            wm_name = self.wmctrl.get_wm_and_env_info()['name'].lower()
+            self.logger.debug("XDG_CURRENT_DESKTOP variable isn't set - using wmctrl name: " + wm_name)
+            desktop_env = wm_name
 
         if operating_system == 'linux':
-            if desktop_env == 'unity':
+            if desktop_env == 'unity' or desktop_env == 'unity:unity7':
                 from .unitywm import UnityWm as WmImpl
 
         try:
