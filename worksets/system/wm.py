@@ -32,7 +32,7 @@ class Wm():
         desktop_env = os.environ['XDG_CURRENT_DESKTOP'].lower()
 
         if operating_system == 'linux':
-            if desktop_env == 'unity':
+            if desktop_env == 'unity' or desktop_env == 'unity:unity7':
                 from .unitywm import UnityWm as WmImpl
 
         try:

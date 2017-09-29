@@ -28,7 +28,7 @@ from .logger import Logger
 
 class Settings():
 
-    WORKSETS_VERSION = '0.1'
+    WORKSETS_VERSION = '0.1.1'
 
     def __init__(self, publisher, wm):
         self.LOCALE_DIR = 'locale'
