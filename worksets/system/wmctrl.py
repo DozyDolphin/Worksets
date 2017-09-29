@@ -36,8 +36,9 @@ class Wmctrl():
 
     def get_wm_and_env_info(self):
         param = '-m'
-        output = subprocess.getoutput(self.app + param)
+        output = subprocess.getoutput(self.app + ' ' + param)
         wm_and_environment = self._parse_wm_and_env_info(output)
+        print(str(wm_and_environment))
         return wm_and_environment
 
     def _parse_wm_and_env_info(self, input):

@@ -153,10 +153,10 @@ class UnityWm():
         # If workspace changer hasn't been enabled h- and v-size doesn't seem to be set.
         if not workspaces_horz:
             self.logger.debug("unity/plugins/core/hsize not set - setting horisontal workspaces to '1'")
-            workspaces_horz == '1'
+            workspaces_horz = '1'
         if not workspaces_vert:
             self.logger.debug("unity/plugins/core/vsize not set - setting vertical workspaces to '1'")
-            workspaces_vert == '1'
+            workspaces_vert = '1'
         workspaces_total = int(workspaces_vert) * int(workspaces_horz)
         self.logger.debug("Horisontal number of workspaces is: " + str(workspaces_horz))
         self.logger.debug("Vertical number of workspaces is: " + str(workspaces_vert))
